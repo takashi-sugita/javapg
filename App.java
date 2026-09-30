@@ -5,8 +5,17 @@ public class App { // Appという名前のプログラムを定義します。�
     public static void main(String[] args) throws Exception { // プログラムの開始地点です。【1】
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0); // 8080番ポートでサーバーを用意します。【1】
         server.createContext("/", exchange -> { // 「/」へのアクセスを受け取る処理を登録します。【1】
-            String message = "サーバーが起動しました！"; // ブラウザに返す文字を用意します。【毎】
-            System.out.println("ハンドラが動いた");
+            String path = exchange.getRequestURI().getPath(); // アクセスされたパスを取り出します
+            String message;
+            if (path.equals("/hello")) { // パスが「/hello」か比べます
+                message = "こんにちは！";
+            } else if (path.equals("/bye")) { // パスが「/bye」か比べます
+                message = "さようなら！";
+            } else if (path.equals("/menu")) { // パスが「/menu」か比べます
+                message = "今日の定食はカレー";
+            } else {
+                message = "ページが見つかりません";
+            }
             exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8"); // 返す文字の形式と文字コードを指定します。【毎】
             byte[] body = message.getBytes("UTF-8"); // 文字をUTF-8のデータに変換します。【毎】
             exchange.sendResponseHeaders(200, body.length); // 正常な応答であることとデータの長さを送ります。【毎】
