@@ -19,6 +19,34 @@ public class App {
         initializeDatabase(); // ★ 起動時にDBとtodos表を用意する
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        server.createContext("/api/todos", exchange -> { // APIのURLに対する処理を登録する
+            if (!exchange.getRequestURI().getPath().equals("/api/todos")) { // URLが完全一致するか確かめる
+                exchange.sendResponseHeaders(404, -1); // 一致しないURLには「見つからない」を返す
+                exchange.close(); // 通信を閉じる
+                return; // ここで処理を終える
+            } // URL確認の終わり
+            if (!exchange.getRequestMethod().equals("GET")) { // GETで呼ばれたか確かめる
+                exchange.sendResponseHeaders(405, -1); // GET以外には「許可されていない方法」を返す
+                exchange.close(); // 通信を閉じる
+                return; // ここで処理を終える
+            } // リクエスト方法確認の終わり
+            List<Todo> todos = loadTodos(); // SQLiteから全Todoを読み込む
+            StringBuilder json = new StringBuilder("["); // JSON配列の文字列を作り始める
+            for (int i = 0; i < todos.size(); i++) { // Todoを先頭から順に処理する
+                if (i > 0) { // 2件目以降か確かめる
+                    json.append(","); // Todo同士の間にカンマを入れる
+                } // カンマ処理の終わり
+                Todo todo = todos.get(i); // 今処理しているTodoを取り出す
+                json.append("{\"title\":\"").append(escapeJson(todo.getTitle())) // タイトルをJSON用にエスケープする
+                        .append("\",\"done\":").append(todo.isDone()).append("}"); // 完了状態を加えて項目を閉じる
+            } // Todo一覧の処理の終わり
+            json.append("]"); // JSON配列を閉じる
+            byte[] body = json.toString().getBytes(StandardCharsets.UTF_8); // JSONをUTF-8のバイト列にする
+            exchange.getResponseHeaders().set("Content-Type", "application/json"); // Content-Typeを指定どおりにする
+            exchange.sendResponseHeaders(200, body.length); // 成功と本文の長さを返す
+            exchange.getResponseBody().write(body); // JSON本文を送る
+            exchange.close(); // 通信を閉じる
+        }); // APIのURLに対する処理の登録を終える
         server.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
@@ -100,6 +128,29 @@ public class App {
         server.start();
         System.out.println("サーバー起動: http://localhost:8080 （止めるときは Ctrl+C）");
     }
+
+    static String escapeJson(String value) { // JSON文字列内で特別な意味を持つ文字を変換する
+        StringBuilder escaped = new StringBuilder(); // 変換後の文字列をためる
+        for (int i = 0; i < value.length(); i++) { // 文字を1つずつ調べる
+            char character = value.charAt(i); // 今調べている文字を取り出す
+            switch (character) { // 特別な文字かどうかで処理を分ける
+                case '"': escaped.append("\\\""); break; // 引用符をエスケープする
+                case '\\': escaped.append("\\\\"); break; // バックスラッシュをエスケープする
+                case '\n': escaped.append("\\n"); break; // 改行をエスケープする
+                case '\r': escaped.append("\\r"); break; // 復帰文字をエスケープする
+                case '\t': escaped.append("\\t"); break; // タブをエスケープする
+                case '\b': escaped.append("\\b"); break; // バックスペースをエスケープする
+                case '\f': escaped.append("\\f"); break; // フォームフィードをエスケープする
+                default: // 上記以外の文字を処理する
+                    if (character < 0x20) { // JSONでそのまま使えない制御文字か調べる
+                        escaped.append(String.format("\\u%04x", (int) character)); // Unicode形式に変換する
+                    } else { // 通常の文字の場合
+                        escaped.append(character); // 文字をそのまま追加する
+                    } // 制御文字の確認を終える
+            } // 文字ごとの変換を終える
+        } // 全文字の変換を終える
+        return escaped.toString(); // 変換済みの文字列を返す
+    } // JSONエスケープメソッドの終わり
 
     static void initializeDatabase() throws SQLException { // ★ 起動時にtodos表を準備する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
