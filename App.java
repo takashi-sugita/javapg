@@ -93,7 +93,9 @@ public class App {
             } else if (path.equals("/")) {
                 String html = "<!doctype html><html lang='ja'><head><meta charset='UTF-8'>"
                         + "<title>わたしのTodo</title><style>body { max-width: 640px; margin: 24px auto; "
-                        + "padding: 0 16px; font-size: 16px; }</style></head><body>"
+                        + "padding: 0 16px; font-size: 16px; } .todo-list { list-style: none; padding: 0; } "
+                        + ".todo-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; "
+                        + "align-items: center; margin: 8px 0; } .todo-actions { white-space: nowrap; }</style></head><body>"
                         + "<h1>わたしのTodo</h1>"
                         + "<form method='post' action='/add'><input name='todo'><button>追加</button></form>";
                 List<Todo> todos = loadTodos(); // ★ SELECT文でDBから一覧を読み込む
@@ -102,17 +104,18 @@ public class App {
                 if (todos.isEmpty()) {
                     html += "<p>やることは、いまゼロです</p>";
                 } else {
-                    html += "<ul>";
+                    html += "<ul class='todo-list'>";
                     for (Todo todo : todos) {
-                        String mark = "";
+                        String mark = "□ ";
                         String title = todo.getTitle();
                         if (todo.isDone()) {
-                            mark = " ✅";
+                            mark = "✅ ";
                             title = "<span style='color: #888; text-decoration: line-through;'>"
                                     + title + "</span>";
                         }
-                        html += "<li>" + title + mark + " <a href='/done?id=" + todo.getId()
-                                + "'>完了</a> <a href='/delete?id=" + todo.getId() + "'>削除</a></li>";
+                        html += "<li class='todo-row'><span>" + mark + title + "</span>"
+                                + "<span class='todo-actions'><a href='/done?id=" + todo.getId()
+                                + "'>完了</a> <a href='/delete?id=" + todo.getId() + "'>削除</a></span></li>";
                     }
                     html += "</ul>";
                 }
