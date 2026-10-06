@@ -134,13 +134,27 @@ public class App {
         for (int i = 0; i < value.length(); i++) { // 文字を1つずつ調べる
             char character = value.charAt(i); // 今調べている文字を取り出す
             switch (character) { // 特別な文字かどうかで処理を分ける
-                case '"': escaped.append("\\\""); break; // 引用符をエスケープする
-                case '\\': escaped.append("\\\\"); break; // バックスラッシュをエスケープする
-                case '\n': escaped.append("\\n"); break; // 改行をエスケープする
-                case '\r': escaped.append("\\r"); break; // 復帰文字をエスケープする
-                case '\t': escaped.append("\\t"); break; // タブをエスケープする
-                case '\b': escaped.append("\\b"); break; // バックスペースをエスケープする
-                case '\f': escaped.append("\\f"); break; // フォームフィードをエスケープする
+                case '"':
+                    escaped.append("\\\"");
+                    break; // 引用符をエスケープする
+                case '\\':
+                    escaped.append("\\\\");
+                    break; // バックスラッシュをエスケープする
+                case '\n':
+                    escaped.append("\\n");
+                    break; // 改行をエスケープする
+                case '\r':
+                    escaped.append("\\r");
+                    break; // 復帰文字をエスケープする
+                case '\t':
+                    escaped.append("\\t");
+                    break; // タブをエスケープする
+                case '\b':
+                    escaped.append("\\b");
+                    break; // バックスペースをエスケープする
+                case '\f':
+                    escaped.append("\\f");
+                    break; // フォームフィードをエスケープする
                 default: // 上記以外の文字を処理する
                     if (character < 0x20) { // JSONでそのまま使えない制御文字か調べる
                         escaped.append(String.format("\\u%04x", (int) character)); // Unicode形式に変換する
@@ -154,7 +168,7 @@ public class App {
 
     static void initializeDatabase() throws SQLException { // ★ 起動時にtodos表を準備する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
-             Statement statement = connection.createStatement()) { // ★ CREATE TABLEを実行する文を作る
+                Statement statement = connection.createStatement()) { // ★ CREATE TABLEを実行する文を作る
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS todos ("
                     + "id INTEGER PRIMARY KEY, title TEXT, done INTEGER)"); // ★ 無い場合だけtodos表を作成する
         } // ★ 接続と文を閉じる
@@ -163,7 +177,7 @@ public class App {
     static void addTodo(String title) throws IOException { // ★ TodoをDBへ追加するメソッド
         String sql = "INSERT INTO todos (title, done) VALUES (?, 0)"; // ★ 追加用SQLを用意する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
-             PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
+                PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
             statement.setString(1, title); // ★ 1つ目の?にTodo名を設定する
             statement.executeUpdate(); // ★ INSERTを実行する
         } catch (SQLException e) { // ★ SQLエラーを受け取る
@@ -174,7 +188,7 @@ public class App {
     static void markDone(int id) throws IOException { // ★ Todoを完了状態にするメソッド
         String sql = "UPDATE todos SET done = 1 WHERE id = ?"; // ★ 完了更新用SQLを用意する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
-             PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
+                PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
             statement.setInt(1, id); // ★ 1つ目の?にTodo番号を設定する
             statement.executeUpdate(); // ★ UPDATEを実行する
         } catch (SQLException e) { // ★ SQLエラーを受け取る
@@ -185,7 +199,7 @@ public class App {
     static void deleteTodo(int id) throws IOException { // ★ TodoをDBから削除するメソッド
         String sql = "DELETE FROM todos WHERE id = ?"; // ★ 削除用SQLを用意する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
-             PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
+                PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
             statement.setInt(1, id); // ★ 1つ目の?にTodo番号を設定する
             statement.executeUpdate(); // ★ DELETEを実行する
         } catch (SQLException e) { // ★ SQLエラーを受け取る
@@ -197,8 +211,8 @@ public class App {
         List<Todo> todos = new ArrayList<>(); // ★ 読み込んだTodoを格納する一覧
         String sql = "SELECT id, title, done FROM todos ORDER BY id"; // ★ 一覧取得用SQLを用意する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
-             PreparedStatement statement = connection.prepareStatement(sql); // ★ SELECT文を準備する
-             ResultSet result = statement.executeQuery()) { // ★ SELECTを実行して結果を受け取る
+                PreparedStatement statement = connection.prepareStatement(sql); // ★ SELECT文を準備する
+                ResultSet result = statement.executeQuery()) { // ★ SELECTを実行して結果を受け取る
             while (result.next()) { // ★ 結果の行を1件ずつ読む
                 Todo todo = new Todo(result.getInt("id"), result.getString("title")); // ★ IDとタイトルでTodoを作る
                 todo.setDone(result.getInt("done") == 1); // ★ 完了状態を設定する
