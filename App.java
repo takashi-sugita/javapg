@@ -97,6 +97,8 @@ public class App {
                         + "<h1>わたしのTodo</h1>"
                         + "<form method='post' action='/add'><input name='todo'><button>追加</button></form>";
                 List<Todo> todos = loadTodos(); // ★ SELECT文でDBから一覧を読み込む
+                long doneCount = todos.stream().filter(Todo::isDone).count(); // 完了したTodoの数を数える
+                html += "<p>" + todos.size() + "件中" + doneCount + "件 完了</p>"; // 全件数と完了数を表示する
                 if (todos.isEmpty()) {
                     html += "<p>やることは、いまゼロです</p>";
                 } else {
