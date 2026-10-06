@@ -55,10 +55,60 @@ public class App {
 
             if (path.equals("/add") && method.equals("POST")) {
                 String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-                String value = body.substring(5);
-                String title = URLDecoder.decode(value, StandardCharsets.UTF_8);
+                String title = getFormValue(body, "todo");
                 if (!title.isEmpty()) {
                     addTodo(title); // ★ INSERT文で新しいTodoをDBに追加する
+                }
+                exchange.getResponseHeaders().set("Location", "/");
+                exchange.sendResponseHeaders(303, -1);
+                exchange.close();
+                return;
+            } else if (path.equals("/edit") && method.equals("GET")) {
+                String query = exchange.getRequestURI().getQuery();
+                try {
+                    int id = query != null && query.startsWith("id=") ? Integer.parseInt(query.substring(3)) : -1;
+                    Todo todo = findTodo(id);
+                    if (todo == null) {
+                        exchange.getResponseHeaders().set("Location", "/");
+                        exchange.sendResponseHeaders(303, -1);
+                        exchange.close();
+                        return;
+                    }
+                    String html = "<!doctype html><html lang='ja'><head><meta charset='UTF-8'><title>TODO編集</title><style>"
+                            + "*{box-sizing:border-box}body{margin:0;padding:36px 16px;background:#f4f4f4;color:#333;"
+                            + "font-family:Arial,'Noto Sans JP',sans-serif}.app-card{width:100%;max-width:750px;margin:0 auto;"
+                            + "padding:42px 38px;background:#fff;border-radius:12px;box-shadow:0 4px 18px #00000018}"
+                            + "h1{margin:0 0 42px;text-align:center;font-size:40px}.edit-form{display:flex;gap:12px}"
+                            + ".edit-form input{min-width:0;flex:1;padding:14px;border:2px solid #ddd;border-radius:5px;"
+                            + "font-size:18px}.edit-button,.cancel-button{border:0;border-radius:5px;padding:13px 20px;font-size:16px;"
+                            + "text-decoration:none;cursor:pointer;color:white}.edit-button{background:#2196f3}"
+                            + ".cancel-button{background:#f44336}@media(max-width:560px){.app-card{padding:28px 18px}h1{font-size:32px}"
+                            + ".edit-form{flex-wrap:wrap}.edit-form input{flex-basis:100%}}</style></head><body>"
+                            + "<main class='app-card'><h1>TODO編集</h1><form class='edit-form' method='post' action='/edit'>"
+                            + "<input type='hidden' name='id' value='" + todo.getId() + "'>"
+                            + "<input name='title' value='" + escapeHtml(todo.getTitle()) + "' required>"
+                            + "<button class='edit-button' type='submit'>更新</button>"
+                            + "<a class='cancel-button' href='/'>キャンセル</a></form>"
+                            + "</main></body></html>";
+                    byte[] page = html.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+                    exchange.sendResponseHeaders(200, page.length);
+                    exchange.getResponseBody().write(page);
+                    exchange.close();
+                    return;
+                } catch (NumberFormatException e) {
+                    exchange.getResponseHeaders().set("Location", "/");
+                    exchange.sendResponseHeaders(303, -1);
+                    exchange.close();
+                    return;
+                }
+            } else if (path.equals("/edit") && method.equals("POST")) {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                try {
+                    int id = Integer.parseInt(getFormValue(body, "id"));
+                    String title = getFormValue(body, "title").trim();
+                    if (!title.isEmpty()) updateTodo(id, title);
+                } catch (NumberFormatException e) {
                 }
                 exchange.getResponseHeaders().set("Location", "/");
                 exchange.sendResponseHeaders(303, -1);
@@ -100,24 +150,25 @@ public class App {
                         + "h1 { margin: 0 0 42px; text-align: center; font-size: 40px; } "
                         + ".add-form { display: flex; gap: 12px; } .add-form input { min-width: 0; flex: 1; "
                         + "padding: 14px; border: 2px solid #ddd; border-radius: 5px; font-size: 18px; } "
-                        + ".add-form button, .filter-link, .delete-button { border: 0; border-radius: 5px; "
+                        + ".add-form button, .filter-link, .delete-button, .edit-button { border: 0; border-radius: 5px; "
                         + "padding: 13px 20px; font-size: 16px; text-decoration: none; cursor: pointer; } "
                         + ".add-form button { background: #4caf50; color: white; } "
                         + ".filters { display: flex; justify-content: center; gap: 12px; margin: 24px 0; } "
                         + ".filter-link { background: #eee; color: #222; } .filter-link.active { background: #4caf50; color: white; } "
                         + ".todo-list { list-style: none; padding: 0; margin: 0; } "
-                        + ".todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 16px; "
+                        + ".todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 16px; "
                         + "align-items: center; margin: 12px 0; padding: 18px; background: #f8f8f8; border-radius: 6px; } "
                         + ".todo-check { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid #888; "
                         + "border-radius: 3px; color: white; text-decoration: none; font-size: 19px; } "
                         + ".todo-check.done { border-color: #4b9cff; background: #4b9cff; } "
                         + ".todo-title { font-size: 20px; overflow-wrap: anywhere; } "
                         + ".todo-row.done .todo-title { color: #aaa; text-decoration: line-through; } "
-                        + ".delete-button { padding: 10px 14px; background: #f44336; color: white; } "
+                        + ".delete-button, .edit-button { padding: 10px 14px; color: white; } "
+                        + ".delete-button { background: #f44336; } .edit-button { background: #2196f3; } "
                         + ".task-count { margin: 26px 0 0; color: #666; text-align: center; font-size: 18px; } "
                         + ".empty-message { text-align: center; color: #666; } "
                         + "@media (max-width: 560px) { .app-card { padding: 28px 18px; } h1 { font-size: 32px; } "
-                        + ".todo-row { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; padding: 14px 10px; } "
+                        + ".todo-row { grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 10px; padding: 14px 10px; } "
                         + ".delete-button { padding: 9px 10px; } }</style></head><body><main class='app-card'>"
                         + "<h1>TODOアプリ</h1>"
                         + "<form class='add-form' method='post' action='/add'><input name='todo' placeholder='新しいタスクを入力...' required><button>追加</button></form>";
@@ -154,7 +205,8 @@ public class App {
                             checkbox = "<a class='todo-check' href='/done?id=" + todo.getId() + "' aria-label='完了にする'></a>"; // 未完了のチェック欄を完了リンクにする
                         }
                         html += "<li class='" + rowClass + "'>" + checkbox + "<span class='todo-title'>"
-                                + todo.getTitle() + "</span><a class='delete-button' href='/delete?id="
+                                + escapeHtml(todo.getTitle()) + "</span><a class='edit-button' href='/edit?id="
+                                + todo.getId() + "'>編集</a><a class='delete-button' href='/delete?id="
                                 + todo.getId() + "'>削除</a></li>"; // Todo行を表示する
                     }
                     html += "</ul>";
@@ -211,6 +263,21 @@ public class App {
         return escaped.toString(); // 変換済みの文字列を返す
     } // JSONエスケープメソッドの終わり
 
+    static String getFormValue(String body, String name) {
+        for (String pair : body.split("&")) {
+            String[] parts = pair.split("=", 2);
+            if (parts.length == 2 && URLDecoder.decode(parts[0], StandardCharsets.UTF_8).equals(name)) {
+                return URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+            }
+        }
+        return "";
+    }
+
+    static String escapeHtml(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&#39;");
+    }
+
     static void initializeDatabase() throws SQLException { // ★ 起動時にtodos表を準備する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
                 Statement statement = connection.createStatement()) { // ★ CREATE TABLEを実行する文を作る
@@ -251,6 +318,36 @@ public class App {
             throw new IOException(e); // ★ HTTP処理へエラーを伝える
         } // ★ SQL処理を終える
     } // ★ deleteTodoメソッドの終わり
+
+    static void updateTodo(int id, String title) throws IOException {
+        String sql = "UPDATE todos SET title = ? WHERE id = ?";
+        try (Connection connection = DriverManager.getConnection(DB_URL);
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, title);
+            statement.setInt(2, id);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
+    }
+
+    static Todo findTodo(int id) throws IOException {
+        String sql = "SELECT id, title, done FROM todos WHERE id = ?";
+        try (Connection connection = DriverManager.getConnection(DB_URL);
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, id);
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next()) {
+                    Todo todo = new Todo(result.getInt("id"), result.getString("title"));
+                    todo.setDone(result.getInt("done") == 1);
+                    return todo;
+                }
+            }
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
+        return null;
+    }
 
     static List<Todo> loadTodos() throws IOException { // ★ DBからTodo一覧を読み込むメソッド
         List<Todo> todos = new ArrayList<>(); // ★ 読み込んだTodoを格納する一覧
