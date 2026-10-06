@@ -92,34 +92,74 @@ public class App {
                 return;
             } else if (path.equals("/")) {
                 String html = "<!doctype html><html lang='ja'><head><meta charset='UTF-8'>"
-                        + "<title>わたしのTodo</title><style>body { max-width: 640px; margin: 24px auto; "
-                        + "padding: 0 16px; font-size: 16px; } .todo-list { list-style: none; padding: 0; } "
-                        + ".todo-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; "
-                        + "align-items: center; margin: 8px 0; } .todo-actions { white-space: nowrap; }</style></head><body>"
-                        + "<h1>わたしのTodo</h1>"
-                        + "<form method='post' action='/add'><input name='todo'><button>追加</button></form>";
+                        + "<title>TODOアプリ</title><style>"
+                        + "* { box-sizing: border-box; } body { margin: 0; padding: 36px 16px; background: #f4f4f4; "
+                        + "color: #333; font-family: Arial, 'Noto Sans JP', sans-serif; } "
+                        + ".app-card { width: 100%; max-width: 750px; margin: 0 auto; padding: 42px 38px; "
+                        + "background: #fff; border-radius: 12px; box-shadow: 0 4px 18px #00000018; } "
+                        + "h1 { margin: 0 0 42px; text-align: center; font-size: 40px; } "
+                        + ".add-form { display: flex; gap: 12px; } .add-form input { min-width: 0; flex: 1; "
+                        + "padding: 14px; border: 2px solid #ddd; border-radius: 5px; font-size: 18px; } "
+                        + ".add-form button, .filter-link, .delete-button { border: 0; border-radius: 5px; "
+                        + "padding: 13px 20px; font-size: 16px; text-decoration: none; cursor: pointer; } "
+                        + ".add-form button { background: #4caf50; color: white; } "
+                        + ".filters { display: flex; justify-content: center; gap: 12px; margin: 24px 0; } "
+                        + ".filter-link { background: #eee; color: #222; } .filter-link.active { background: #4caf50; color: white; } "
+                        + ".todo-list { list-style: none; padding: 0; margin: 0; } "
+                        + ".todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 16px; "
+                        + "align-items: center; margin: 12px 0; padding: 18px; background: #f8f8f8; border-radius: 6px; } "
+                        + ".todo-check { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid #888; "
+                        + "border-radius: 3px; color: white; text-decoration: none; font-size: 19px; } "
+                        + ".todo-check.done { border-color: #4b9cff; background: #4b9cff; } "
+                        + ".todo-title { font-size: 20px; overflow-wrap: anywhere; } "
+                        + ".todo-row.done .todo-title { color: #aaa; text-decoration: line-through; } "
+                        + ".delete-button { padding: 10px 14px; background: #f44336; color: white; } "
+                        + ".task-count { margin: 26px 0 0; color: #666; text-align: center; font-size: 18px; } "
+                        + ".empty-message { text-align: center; color: #666; } "
+                        + "@media (max-width: 560px) { .app-card { padding: 28px 18px; } h1 { font-size: 32px; } "
+                        + ".todo-row { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; padding: 14px 10px; } "
+                        + ".delete-button { padding: 9px 10px; } }</style></head><body><main class='app-card'>"
+                        + "<h1>TODOアプリ</h1>"
+                        + "<form class='add-form' method='post' action='/add'><input name='todo' placeholder='新しいタスクを入力...' required><button>追加</button></form>";
                 List<Todo> todos = loadTodos(); // ★ SELECT文でDBから一覧を読み込む
                 long doneCount = todos.stream().filter(Todo::isDone).count(); // 完了したTodoの数を数える
-                html += "<p>" + todos.size() + "件中" + doneCount + "件 完了</p>"; // 全件数と完了数を表示する
-                if (todos.isEmpty()) {
-                    html += "<p>やることは、いまゼロです</p>";
-                } else {
+                String filter = "all"; // 初期表示は全部にする
+                String query = exchange.getRequestURI().getQuery(); // 選択された表示条件を読む
+                if (query != null && query.startsWith("filter=")) { // 表示条件がURLにあるか調べる
+                    filter = query.substring(7); // URLから表示条件の名前を取り出す
+                } // URLの表示条件を読み終える
+                if (!filter.equals("pending") && !filter.equals("done") && !filter.equals("all")) { // 対応外の条件か調べる
+                    filter = "all"; // 対応外なら全部表示に戻す
+                } // 表示条件の確認を終える
+                html += "<nav class='filters'>" // 絞り込みリンクをまとめる
+                        + "<a class='filter-link " + (filter.equals("all") ? "active" : "") + "' href='/?filter=all'>すべて</a>" // 全件を見るリンク
+                        + "<a class='filter-link " + (filter.equals("pending") ? "active" : "") + "' href='/?filter=pending'>未完了</a>" // 未完了だけを見るリンク
+                        + "<a class='filter-link " + (filter.equals("done") ? "active" : "") + "' href='/?filter=done'>完了</a></nav>"; // 完了だけを見るリンク
+                List<Todo> visibleTodos = new ArrayList<>(); // 条件に合うTodoを入れる一覧
+                for (Todo todo : todos) { // 全Todoを条件と照らし合わせる
+                    if (filter.equals("all") || filter.equals("pending") && !todo.isDone()
+                            || filter.equals("done") && todo.isDone()) { // 選択中の条件に合うか調べる
+                        visibleTodos.add(todo); // 表示対象に加える
+                    } // 条件判定を終える
+                } // 表示対象の抽出を終える
+                if (!todos.isEmpty() && visibleTodos.isEmpty()) {
+                    html += "<p class='empty-message'>この条件に合うTodoはありません</p>";
+                } else if (!visibleTodos.isEmpty()) {
                     html += "<ul class='todo-list'>";
-                    for (Todo todo : todos) {
-                        String mark = "□ ";
-                        String title = todo.getTitle();
-                        if (todo.isDone()) {
-                            mark = "✅ ";
-                            title = "<span style='color: #888; text-decoration: line-through;'>"
-                                    + title + "</span>";
+                    for (Todo todo : visibleTodos) {
+                        String rowClass = todo.isDone() ? "todo-row done" : "todo-row"; // 完了行の見た目を選ぶ
+                        String check = todo.isDone() ? "✓" : ""; // 完了時だけチェックを表示する
+                        String checkbox = "<span class='todo-check done'>" + check + "</span>"; // 完了済みのチェック欄を作る
+                        if (!todo.isDone()) {
+                            checkbox = "<a class='todo-check' href='/done?id=" + todo.getId() + "' aria-label='完了にする'></a>"; // 未完了のチェック欄を完了リンクにする
                         }
-                        html += "<li class='todo-row'><span>" + mark + title + "</span>"
-                                + "<span class='todo-actions'><a href='/done?id=" + todo.getId()
-                                + "'>完了</a> <a href='/delete?id=" + todo.getId() + "'>削除</a></span></li>";
+                        html += "<li class='" + rowClass + "'>" + checkbox + "<span class='todo-title'>"
+                                + todo.getTitle() + "</span><a class='delete-button' href='/delete?id="
+                                + todo.getId() + "'>削除</a></li>"; // Todo行を表示する
                     }
                     html += "</ul>";
                 }
-                html += "</body></html>";
+                html += "<p class='task-count'>" + (todos.size() - doneCount) + "個のタスク</p></main></body></html>"; // 未完了件数を表示する
                 message = html;
                 exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
             } else {
