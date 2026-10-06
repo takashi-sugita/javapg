@@ -11,6 +11,8 @@ import java.sql.Statement; // ★ テーブル作成SQLを実行するための�
 import java.io.IOException; // ★ SQLエラーをHTTP処理へ伝えるための型
 import java.util.ArrayList; // ★ SELECT結果を一覧にまとめるために使用
 import java.util.List; // ★ Todo一覧の型
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 
 public class App {
     static final String DB_URL = "jdbc:sqlite:todos.db"; // ★ SQLiteデータベースの場所
@@ -37,8 +39,9 @@ public class App {
                     json.append(","); // Todo同士の間にカンマを入れる
                 } // カンマ処理の終わり
                 Todo todo = todos.get(i); // 今処理しているTodoを取り出す
-                json.append("{\"title\":\"").append(escapeJson(todo.getTitle())) // タイトルをJSON用にエスケープする
-                        .append("\",\"done\":").append(todo.isDone()).append("}"); // 完了状態を加えて項目を閉じる
+                json.append("{\"title\":\"").append(escapeJson(todo.getTitle()))
+                        .append("\",\"done\":").append(todo.isDone())
+                        .append(",\"dueDate\":\"").append(escapeJson(todo.getDueDate())).append("\"}");
             } // Todo一覧の処理の終わり
             json.append("]"); // JSON配列を閉じる
             byte[] body = json.toString().getBytes(StandardCharsets.UTF_8); // JSONをUTF-8のバイト列にする
@@ -56,8 +59,9 @@ public class App {
             if (path.equals("/add") && method.equals("POST")) {
                 String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
                 String title = getFormValue(body, "todo");
-                if (!title.isEmpty()) {
-                    addTodo(title); // ★ INSERT文で新しいTodoをDBに追加する
+                String dueDate = getFormValue(body, "dueDate");
+                if (!title.isEmpty() && isValidDate(dueDate)) {
+                    addTodo(title, dueDate); // ★ INSERT文で新しいTodoをDBに追加する
                 }
                 exchange.getResponseHeaders().set("Location", "/");
                 exchange.sendResponseHeaders(303, -1);
@@ -79,14 +83,16 @@ public class App {
                             + "font-family:Arial,'Noto Sans JP',sans-serif}.app-card{width:100%;max-width:750px;margin:0 auto;"
                             + "padding:42px 38px;background:#fff;border-radius:12px;box-shadow:0 4px 18px #00000018}"
                             + "h1{margin:0 0 42px;text-align:center;font-size:40px}.edit-form{display:flex;gap:12px}"
-                            + ".edit-form input{min-width:0;flex:1;padding:14px;border:2px solid #ddd;border-radius:5px;"
-                            + "font-size:18px}.edit-button,.cancel-button{border:0;border-radius:5px;padding:13px 20px;font-size:16px;"
+                            + ".edit-form input{min-width:0;flex:1;padding:14px;border:2px solid #ddd;border-radius:5px;font-size:18px}"
+                            + ".edit-form label{display:flex;align-items:center;gap:8px}"
+                            + ".edit-button,.cancel-button{border:0;border-radius:5px;padding:13px 20px;font-size:16px;"
                             + "text-decoration:none;cursor:pointer;color:white}.edit-button{background:#2196f3}"
                             + ".cancel-button{background:#f44336}@media(max-width:560px){.app-card{padding:28px 18px}h1{font-size:32px}"
                             + ".edit-form{flex-wrap:wrap}.edit-form input{flex-basis:100%}}</style></head><body>"
                             + "<main class='app-card'><h1>TODO編集</h1><form class='edit-form' method='post' action='/edit'>"
                             + "<input type='hidden' name='id' value='" + todo.getId() + "'>"
                             + "<input name='title' value='" + escapeHtml(todo.getTitle()) + "' required>"
+                            + "<label>期限日 <input type='date' name='dueDate' value='" + escapeHtml(todo.getDueDate()) + "'></label>"
                             + "<button class='edit-button' type='submit'>更新</button>"
                             + "<a class='cancel-button' href='/'>キャンセル</a></form>"
                             + "</main></body></html>";
@@ -107,7 +113,8 @@ public class App {
                 try {
                     int id = Integer.parseInt(getFormValue(body, "id"));
                     String title = getFormValue(body, "title").trim();
-                    if (!title.isEmpty()) updateTodo(id, title);
+                    String dueDate = getFormValue(body, "dueDate");
+                    if (!title.isEmpty() && isValidDate(dueDate)) updateTodo(id, title, dueDate);
                 } catch (NumberFormatException e) {
                 }
                 exchange.getResponseHeaders().set("Location", "/");
@@ -150,28 +157,32 @@ public class App {
                         + "h1 { margin: 0 0 42px; text-align: center; font-size: 40px; } "
                         + ".add-form { display: flex; gap: 12px; } .add-form input { min-width: 0; flex: 1; "
                         + "padding: 14px; border: 2px solid #ddd; border-radius: 5px; font-size: 18px; } "
+                        + ".add-form input[type=date] { color: #999; } .add-form input[type=date].has-date { color: #333; } "
+                        + ".add-form input[type=date]::-webkit-datetime-edit { color: inherit; } "
                         + ".add-form button, .filter-link, .delete-button, .edit-button { border: 0; border-radius: 5px; "
                         + "padding: 13px 20px; font-size: 16px; text-decoration: none; cursor: pointer; } "
                         + ".add-form button { background: #4caf50; color: white; } "
                         + ".filters { display: flex; justify-content: center; gap: 12px; margin: 24px 0; } "
                         + ".filter-link { background: #eee; color: #222; } .filter-link.active { background: #4caf50; color: white; } "
                         + ".todo-list { list-style: none; padding: 0; margin: 0; } "
-                        + ".todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 16px; "
+                        + ".todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto auto; gap: 16px; "
                         + "align-items: center; margin: 12px 0; padding: 18px; background: #f8f8f8; border-radius: 6px; } "
                         + ".todo-check { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid #888; "
                         + "border-radius: 3px; color: white; text-decoration: none; font-size: 19px; } "
                         + ".todo-check.done { border-color: #4b9cff; background: #4b9cff; } "
                         + ".todo-title { font-size: 20px; overflow-wrap: anywhere; } "
                         + ".todo-row.done .todo-title { color: #aaa; text-decoration: line-through; } "
+                        + ".due-date { color: #666; font-size: 14px; white-space: nowrap; } .due-date.overdue { color: #d32f2f; font-weight: bold; } .due-date.due-today { color: #ed6c02; font-weight: bold; } "
                         + ".delete-button, .edit-button { padding: 10px 14px; color: white; } "
                         + ".delete-button { background: #f44336; } .edit-button { background: #2196f3; } "
                         + ".task-count { margin: 26px 0 0; color: #666; text-align: center; font-size: 18px; } "
                         + ".empty-message { text-align: center; color: #666; } "
                         + "@media (max-width: 560px) { .app-card { padding: 28px 18px; } h1 { font-size: 32px; } "
-                        + ".todo-row { grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 10px; padding: 14px 10px; } "
+                        + ".todo-row { grid-template-columns: 28px minmax(0, 1fr) auto auto auto; gap: 10px; padding: 14px 10px; } "
                         + ".delete-button { padding: 9px 10px; } }</style></head><body><main class='app-card'>"
                         + "<h1>TODOアプリ</h1>"
-                        + "<form class='add-form' method='post' action='/add'><input name='todo' placeholder='新しいタスクを入力...' required><button>追加</button></form>";
+                        + "<form class='add-form' method='post' action='/add'><input name='todo' placeholder='新しいタスクを入力...' required>"
+                        + "<input class='date-input' type='date' name='dueDate' aria-label='期限日'><button>追加</button></form>";
                 List<Todo> todos = loadTodos(); // ★ SELECT文でDBから一覧を読み込む
                 long doneCount = todos.stream().filter(Todo::isDone).count(); // 完了したTodoの数を数える
                 String filter = "all"; // 初期表示は全部にする
@@ -204,14 +215,28 @@ public class App {
                         if (!todo.isDone()) {
                             checkbox = "<a class='todo-check' href='/done?id=" + todo.getId() + "' aria-label='完了にする'></a>"; // 未完了のチェック欄を完了リンクにする
                         }
+                        String today = LocalDate.now().toString();
+                        String dueClass = "";
+                        if (!todo.getDueDate().isEmpty() && !todo.isDone()) {
+                            if (todo.getDueDate().compareTo(today) < 0) dueClass = " overdue";
+                            else if (todo.getDueDate().equals(today)) dueClass = " due-today";
+                        }
+                        String duePrefix = dueClass.equals(" overdue") ? "（超過）" : "";
+                        String dueSuffix = dueClass.equals(" due-today") ? "（今日まで）" : "";
+                        String dueLabel = todo.getDueDate().isEmpty() ? "" : "<span class='due-date" + dueClass
+                                + "'>" + duePrefix + "期限: " + escapeHtml(todo.getDueDate()) + dueSuffix + "</span>";
                         html += "<li class='" + rowClass + "'>" + checkbox + "<span class='todo-title'>"
-                                + escapeHtml(todo.getTitle()) + "</span><a class='edit-button' href='/edit?id="
+                                + escapeHtml(todo.getTitle()) + "</span>" + dueLabel + "<a class='edit-button' href='/edit?id="
                                 + todo.getId() + "'>編集</a><a class='delete-button' href='/delete?id="
                                 + todo.getId() + "'>削除</a></li>"; // Todo行を表示する
                     }
                     html += "</ul>";
                 }
-                html += "<p class='task-count'>" + (todos.size() - doneCount) + "個のタスク</p></main></body></html>"; // 未完了件数を表示する
+                html += "<p class='task-count'>" + (todos.size() - doneCount) + "個のタスク</p></main>"
+                        + "<script>document.querySelectorAll('.date-input').forEach(function(input){"
+                        + "function updateDateColor(){input.classList.toggle('has-date',!!input.value)}"
+                        + "input.addEventListener('input',updateDateColor);input.addEventListener('change',updateDateColor);"
+                        + "updateDateColor()});</script></body></html>"; // 未完了件数を表示する
                 message = html;
                 exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
             } else {
@@ -278,19 +303,37 @@ public class App {
                 .replace("\"", "&quot;").replace("'", "&#39;");
     }
 
+    static boolean isValidDate(String value) {
+        if (value == null || value.isEmpty()) return true;
+        try {
+            LocalDate.parse(value);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
     static void initializeDatabase() throws SQLException { // ★ 起動時にtodos表を準備する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
                 Statement statement = connection.createStatement()) { // ★ CREATE TABLEを実行する文を作る
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS todos ("
-                    + "id INTEGER PRIMARY KEY, title TEXT, done INTEGER)"); // ★ 無い場合だけtodos表を作成する
+                    + "id INTEGER PRIMARY KEY, title TEXT, done INTEGER, due_date TEXT)"); // ★ 無い場合だけtodos表を作成する
+            boolean hasDueDate = false;
+            try (ResultSet columns = statement.executeQuery("PRAGMA table_info(todos)")) {
+                while (columns.next()) {
+                    if ("due_date".equals(columns.getString("name"))) hasDueDate = true;
+                }
+            }
+            if (!hasDueDate) statement.executeUpdate("ALTER TABLE todos ADD COLUMN due_date TEXT");
         } // ★ 接続と文を閉じる
     } // ★ initializeDatabaseメソッドの終わり
 
-    static void addTodo(String title) throws IOException { // ★ TodoをDBへ追加するメソッド
-        String sql = "INSERT INTO todos (title, done) VALUES (?, 0)"; // ★ 追加用SQLを用意する
+    static void addTodo(String title, String dueDate) throws IOException { // ★ TodoをDBへ追加するメソッド
+        String sql = "INSERT INTO todos (title, done, due_date) VALUES (?, 0, ?)"; // ★ 追加用SQLを用意する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
                 PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
             statement.setString(1, title); // ★ 1つ目の?にTodo名を設定する
+            statement.setString(2, dueDate);
             statement.executeUpdate(); // ★ INSERTを実行する
         } catch (SQLException e) { // ★ SQLエラーを受け取る
             throw new IOException(e); // ★ HTTP処理へエラーを伝える
@@ -319,12 +362,13 @@ public class App {
         } // ★ SQL処理を終える
     } // ★ deleteTodoメソッドの終わり
 
-    static void updateTodo(int id, String title) throws IOException {
-        String sql = "UPDATE todos SET title = ? WHERE id = ?";
+    static void updateTodo(int id, String title, String dueDate) throws IOException {
+        String sql = "UPDATE todos SET title = ?, due_date = ? WHERE id = ?";
         try (Connection connection = DriverManager.getConnection(DB_URL);
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, title);
-            statement.setInt(2, id);
+            statement.setString(2, dueDate);
+            statement.setInt(3, id);
             statement.executeUpdate();
         } catch (SQLException e) {
             throw new IOException(e);
@@ -332,13 +376,13 @@ public class App {
     }
 
     static Todo findTodo(int id) throws IOException {
-        String sql = "SELECT id, title, done FROM todos WHERE id = ?";
+        String sql = "SELECT id, title, done, due_date FROM todos WHERE id = ?";
         try (Connection connection = DriverManager.getConnection(DB_URL);
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setInt(1, id);
             try (ResultSet result = statement.executeQuery()) {
                 if (result.next()) {
-                    Todo todo = new Todo(result.getInt("id"), result.getString("title"));
+                    Todo todo = new Todo(result.getInt("id"), result.getString("title"), result.getString("due_date"));
                     todo.setDone(result.getInt("done") == 1);
                     return todo;
                 }
@@ -351,12 +395,12 @@ public class App {
 
     static List<Todo> loadTodos() throws IOException { // ★ DBからTodo一覧を読み込むメソッド
         List<Todo> todos = new ArrayList<>(); // ★ 読み込んだTodoを格納する一覧
-        String sql = "SELECT id, title, done FROM todos ORDER BY id"; // ★ 一覧取得用SQLを用意する
+        String sql = "SELECT id, title, done, due_date FROM todos ORDER BY id"; // ★ 一覧取得用SQLを用意する
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
                 PreparedStatement statement = connection.prepareStatement(sql); // ★ SELECT文を準備する
                 ResultSet result = statement.executeQuery()) { // ★ SELECTを実行して結果を受け取る
             while (result.next()) { // ★ 結果の行を1件ずつ読む
-                Todo todo = new Todo(result.getInt("id"), result.getString("title")); // ★ IDとタイトルでTodoを作る
+                Todo todo = new Todo(result.getInt("id"), result.getString("title"), result.getString("due_date")); // ★ IDとタイトルでTodoを作る
                 todo.setDone(result.getInt("done") == 1); // ★ 完了状態を設定する
                 todos.add(todo); // ★ 一覧へ追加する
             } // ★ 結果の全行を読み終える
@@ -371,10 +415,12 @@ class Todo { // Todo1件分のデータ
     private final int id; // Todoの番号
     private final String title; // Todoのタイトル
     private boolean done; // 完了状態
+    private final String dueDate;
 
-    Todo(int id, String title) { // 番号とタイトルでTodoを作る
+    Todo(int id, String title, String dueDate) { // 番号とタイトルでTodoを作る
         this.id = id; // 番号を保存する
         this.title = title; // タイトルを保存する
+        this.dueDate = dueDate == null ? "" : dueDate;
         this.done = false; // 最初は未完了にする
     } // コンストラクタの終わり
 
@@ -385,6 +431,10 @@ class Todo { // Todo1件分のデータ
     String getTitle() { // タイトルを読み出す
         return title; // タイトルを返す
     } // getTitleの終わり
+
+    String getDueDate() {
+        return dueDate;
+    }
 
     boolean isDone() { // 完了状態を読み出す
         return done; // 完了状態を返す
