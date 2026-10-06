@@ -1,6 +1,8 @@
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,10 +12,7 @@ public class App {
     static int nextId = 1;
 
     public static void main(String[] args) throws Exception {
-        todos.add(new Todo(nextId++, "牛乳を買う"));
-        Todo egg = new Todo(nextId++, "卵を買う");
-        egg.setDone(true);
-        todos.add(egg);
+        load();
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
         server.createContext("/", exchange -> {
@@ -29,6 +28,7 @@ public class App {
                 if (!title.isEmpty()) {
                     todos.add(new Todo(nextId, title));
                     nextId++;
+                    save();
                 }
                 exchange.getResponseHeaders().set("Location", "/");
                 exchange.sendResponseHeaders(303, -1);
@@ -42,6 +42,7 @@ public class App {
                         for (Todo todo : todos) {
                             if (todo.getId() == id) {
                                 todo.setDone(true);
+                                save();
                                 break;
                             }
                         }
@@ -58,6 +59,7 @@ public class App {
                     try {
                         int id = Integer.parseInt(query.substring(3));
                         todos.removeIf(todo -> todo.getId() == id);
+                        save();
                     } catch (NumberFormatException e) {
                     }
                 }
@@ -101,6 +103,50 @@ public class App {
         });
         server.start();
         System.out.println("サーバー起動: http://localhost:8080 （止めるときは Ctrl+C）");
+    }
+
+    static void save() throws java.io.IOException {
+        List<String> lines = new ArrayList<>();
+        for (Todo todo : todos) {
+            String title = todo.getTitle();
+            if (title.contains(",") || title.contains("\"") || title.contains("\n") || title.contains("\r")) {
+                title = "\"" + title.replace("\"", "\"\"") + "\"";
+            }
+            lines.add(todo.getId() + "," + (todo.isDone() ? "1" : "0") + "," + title);
+        }
+        Files.write(Path.of("todos.csv"), lines, StandardCharsets.UTF_8);
+    }
+
+    static void load() throws java.io.IOException {
+        Path file = Path.of("todos.csv");
+        if (!Files.exists(file)) {
+            return;
+        }
+
+        int largestId = 0;
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            int firstComma = line.indexOf(',');
+            int secondComma = line.indexOf(',', firstComma + 1);
+            if (firstComma < 1 || secondComma < 0) {
+                continue;
+            }
+            try {
+                int id = Integer.parseInt(line.substring(0, firstComma));
+                boolean done = line.substring(firstComma + 1, secondComma).equals("1");
+                String title = line.substring(secondComma + 1);
+                if (title.startsWith("\"") && title.endsWith("\"")) {
+                    title = title.substring(1, title.length() - 1).replace("\"\"", "\"");
+                }
+                Todo todo = new Todo(id, title);
+                todo.setDone(done);
+                todos.add(todo);
+                if (id > largestId) {
+                    largestId = id;
+                }
+            } catch (NumberFormatException e) {
+            }
+        }
+        nextId = largestId + 1;
     }
 }
 
