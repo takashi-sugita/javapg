@@ -77,10 +77,13 @@ public class App {
                     html += "<ul>";
                     for (Todo todo : todos) {
                         String mark = "";
+                        String title = todo.getTitle();
                         if (todo.isDone()) {
                             mark = " ✅";
+                            title = "<span style='color: #888; text-decoration: line-through;'>"
+                                    + title + "</span>";
                         }
-                        html += "<li>" + todo.getTitle() + mark + " <a href='/done?id=" + todo.getId()
+                        html += "<li>" + title + mark + " <a href='/done?id=" + todo.getId()
                                 + "'>完了</a> <a href='/delete?id=" + todo.getId() + "'>削除</a></li>";
                     }
                     html += "</ul>";
