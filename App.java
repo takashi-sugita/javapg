@@ -1,18 +1,22 @@
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+import java.sql.Connection; // ★ SQLiteに接続するための型
+import java.sql.DriverManager; // ★ JDBC接続を作るための型
+import java.sql.PreparedStatement; // ★ SQLに値を安全に渡すための型
+import java.sql.ResultSet; // ★ SELECTの結果を読むための型
+import java.sql.SQLException; // ★ SQL処理の例外を扱うための型
+import java.sql.Statement; // ★ テーブル作成SQLを実行するための型
+import java.io.IOException; // ★ SQLエラーをHTTP処理へ伝えるための型
+import java.util.ArrayList; // ★ SELECT結果を一覧にまとめるために使用
+import java.util.List; // ★ Todo一覧の型
 
 public class App {
-    static List<Todo> todos = new ArrayList<>();
-    static int nextId = 1;
+    static final String DB_URL = "jdbc:sqlite:todos.db"; // ★ SQLiteデータベースの場所
 
     public static void main(String[] args) throws Exception {
-        load();
+        initializeDatabase(); // ★ 起動時にDBとtodos表を用意する
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
         server.createContext("/", exchange -> {
@@ -26,9 +30,7 @@ public class App {
                 String value = body.substring(5);
                 String title = URLDecoder.decode(value, StandardCharsets.UTF_8);
                 if (!title.isEmpty()) {
-                    todos.add(new Todo(nextId, title));
-                    nextId++;
-                    save();
+                    addTodo(title); // ★ INSERT文で新しいTodoをDBに追加する
                 }
                 exchange.getResponseHeaders().set("Location", "/");
                 exchange.sendResponseHeaders(303, -1);
@@ -39,13 +41,7 @@ public class App {
                 if (query != null && query.startsWith("id=") && query.length() > 3) {
                     try {
                         int id = Integer.parseInt(query.substring(3));
-                        for (Todo todo : todos) {
-                            if (todo.getId() == id) {
-                                todo.setDone(true);
-                                save();
-                                break;
-                            }
-                        }
+                        markDone(id); // ★ UPDATE文でDB上のTodoを完了にする
                     } catch (NumberFormatException e) {
                     }
                 }
@@ -58,8 +54,7 @@ public class App {
                 if (query != null && query.startsWith("id=") && query.length() > 3) {
                     try {
                         int id = Integer.parseInt(query.substring(3));
-                        todos.removeIf(todo -> todo.getId() == id);
-                        save();
+                        deleteTodo(id); // ★ DELETE文でDBからTodoを削除する
                     } catch (NumberFormatException e) {
                     }
                 }
@@ -73,6 +68,7 @@ public class App {
                         + "padding: 0 16px; font-size: 16px; }</style></head><body>"
                         + "<h1>わたしのTodo</h1>"
                         + "<form method='post' action='/add'><input name='todo'><button>追加</button></form>";
+                List<Todo> todos = loadTodos(); // ★ SELECT文でDBから一覧を読み込む
                 if (todos.isEmpty()) {
                     html += "<p>やることは、いまゼロです</p>";
                 } else {
@@ -105,75 +101,89 @@ public class App {
         System.out.println("サーバー起動: http://localhost:8080 （止めるときは Ctrl+C）");
     }
 
-    static void save() throws java.io.IOException {
-        List<String> lines = new ArrayList<>();
-        for (Todo todo : todos) {
-            String title = todo.getTitle();
-            if (title.contains(",") || title.contains("\"") || title.contains("\n") || title.contains("\r")) {
-                title = "\"" + title.replace("\"", "\"\"") + "\"";
-            }
-            lines.add(todo.getId() + "," + (todo.isDone() ? "1" : "0") + "," + title);
-        }
-        Files.write(Path.of("todos.csv"), lines, StandardCharsets.UTF_8);
-    }
+    static void initializeDatabase() throws SQLException { // ★ 起動時にtodos表を準備する
+        try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
+             Statement statement = connection.createStatement()) { // ★ CREATE TABLEを実行する文を作る
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS todos ("
+                    + "id INTEGER PRIMARY KEY, title TEXT, done INTEGER)"); // ★ 無い場合だけtodos表を作成する
+        } // ★ 接続と文を閉じる
+    } // ★ initializeDatabaseメソッドの終わり
 
-    static void load() throws java.io.IOException {
-        Path file = Path.of("todos.csv");
-        if (!Files.exists(file)) {
-            return;
-        }
+    static void addTodo(String title) throws IOException { // ★ TodoをDBへ追加するメソッド
+        String sql = "INSERT INTO todos (title, done) VALUES (?, 0)"; // ★ 追加用SQLを用意する
+        try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
+             PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
+            statement.setString(1, title); // ★ 1つ目の?にTodo名を設定する
+            statement.executeUpdate(); // ★ INSERTを実行する
+        } catch (SQLException e) { // ★ SQLエラーを受け取る
+            throw new IOException(e); // ★ HTTP処理へエラーを伝える
+        } // ★ SQL処理を終える
+    } // ★ addTodoメソッドの終わり
 
-        int largestId = 0;
-        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
-            int firstComma = line.indexOf(',');
-            int secondComma = line.indexOf(',', firstComma + 1);
-            if (firstComma < 1 || secondComma < 0) {
-                continue;
-            }
-            try {
-                int id = Integer.parseInt(line.substring(0, firstComma));
-                boolean done = line.substring(firstComma + 1, secondComma).equals("1");
-                String title = line.substring(secondComma + 1);
-                if (title.startsWith("\"") && title.endsWith("\"")) {
-                    title = title.substring(1, title.length() - 1).replace("\"\"", "\"");
-                }
-                Todo todo = new Todo(id, title);
-                todo.setDone(done);
-                todos.add(todo);
-                if (id > largestId) {
-                    largestId = id;
-                }
-            } catch (NumberFormatException e) {
-            }
-        }
-        nextId = largestId + 1;
-    }
-}
+    static void markDone(int id) throws IOException { // ★ Todoを完了状態にするメソッド
+        String sql = "UPDATE todos SET done = 1 WHERE id = ?"; // ★ 完了更新用SQLを用意する
+        try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
+             PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
+            statement.setInt(1, id); // ★ 1つ目の?にTodo番号を設定する
+            statement.executeUpdate(); // ★ UPDATEを実行する
+        } catch (SQLException e) { // ★ SQLエラーを受け取る
+            throw new IOException(e); // ★ HTTP処理へエラーを伝える
+        } // ★ SQL処理を終える
+    } // ★ markDoneメソッドの終わり
 
-class Todo {
-    private final int id;
-    private final String title;
-    private boolean done;
+    static void deleteTodo(int id) throws IOException { // ★ TodoをDBから削除するメソッド
+        String sql = "DELETE FROM todos WHERE id = ?"; // ★ 削除用SQLを用意する
+        try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
+             PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
+            statement.setInt(1, id); // ★ 1つ目の?にTodo番号を設定する
+            statement.executeUpdate(); // ★ DELETEを実行する
+        } catch (SQLException e) { // ★ SQLエラーを受け取る
+            throw new IOException(e); // ★ HTTP処理へエラーを伝える
+        } // ★ SQL処理を終える
+    } // ★ deleteTodoメソッドの終わり
 
-    Todo(int id, String title) {
-        this.id = id;
-        this.title = title;
-        this.done = false;
-    }
+    static List<Todo> loadTodos() throws IOException { // ★ DBからTodo一覧を読み込むメソッド
+        List<Todo> todos = new ArrayList<>(); // ★ 読み込んだTodoを格納する一覧
+        String sql = "SELECT id, title, done FROM todos ORDER BY id"; // ★ 一覧取得用SQLを用意する
+        try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
+             PreparedStatement statement = connection.prepareStatement(sql); // ★ SELECT文を準備する
+             ResultSet result = statement.executeQuery()) { // ★ SELECTを実行して結果を受け取る
+            while (result.next()) { // ★ 結果の行を1件ずつ読む
+                Todo todo = new Todo(result.getInt("id"), result.getString("title")); // ★ IDとタイトルでTodoを作る
+                todo.setDone(result.getInt("done") == 1); // ★ 完了状態を設定する
+                todos.add(todo); // ★ 一覧へ追加する
+            } // ★ 結果の全行を読み終える
+        } catch (SQLException e) { // ★ SQLエラーを受け取る
+            throw new IOException(e); // ★ HTTP処理へエラーを伝える
+        } // ★ SQL処理を終える
+        return todos; // ★ 読み込んだ一覧を返す
+    } // ★ loadTodosメソッドの終わり
+} // Appクラスの終わり
 
-    int getId() {
-        return id;
-    }
+class Todo { // Todo1件分のデータ
+    private final int id; // Todoの番号
+    private final String title; // Todoのタイトル
+    private boolean done; // 完了状態
 
-    String getTitle() {
-        return title;
-    }
+    Todo(int id, String title) { // 番号とタイトルでTodoを作る
+        this.id = id; // 番号を保存する
+        this.title = title; // タイトルを保存する
+        this.done = false; // 最初は未完了にする
+    } // コンストラクタの終わり
 
-    boolean isDone() {
-        return done;
-    }
+    int getId() { // 番号を読み出す
+        return id; // 番号を返す
+    } // getIdの終わり
 
-    void setDone(boolean done) {
-        this.done = done;
-    }
-}
+    String getTitle() { // タイトルを読み出す
+        return title; // タイトルを返す
+    } // getTitleの終わり
+
+    boolean isDone() { // 完了状態を読み出す
+        return done; // 完了状態を返す
+    } // isDoneの終わり
+
+    void setDone(boolean done) { // 完了状態を設定する
+        this.done = done; // 状態を保存する
+    } // setDoneの終わり
+} // Todoクラスの終わり
