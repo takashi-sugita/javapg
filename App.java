@@ -126,7 +126,7 @@ public class App {
                 if (query != null && query.startsWith("id=") && query.length() > 3) {
                     try {
                         int id = Integer.parseInt(query.substring(3));
-                        markDone(id); // ★ UPDATE文でDB上のTodoを完了にする
+                        toggleDone(id); // Todoの完了状態を切り替える
                     } catch (NumberFormatException e) {
                     }
                 }
@@ -165,12 +165,13 @@ public class App {
                         + ".filters { display: flex; justify-content: center; gap: 12px; margin: 24px 0; } "
                         + ".filter-link { background: #eee; color: #222; } .filter-link.active { background: #4caf50; color: white; } "
                         + ".todo-list { list-style: none; padding: 0; margin: 0; } "
-                        + ".todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto auto; gap: 16px; "
+                        + ".todo-row { display: flex; gap: 16px; "
                         + "align-items: center; margin: 12px 0; padding: 18px; background: #f8f8f8; border-radius: 6px; } "
                         + ".todo-check { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid #888; "
                         + "border-radius: 3px; color: white; text-decoration: none; font-size: 19px; } "
                         + ".todo-check.done { border-color: #4b9cff; background: #4b9cff; } "
-                        + ".todo-title { font-size: 20px; overflow-wrap: anywhere; } "
+                        + ".todo-check, .due-date, .edit-button, .delete-button { flex-shrink: 0; } "
+                        + ".todo-title { flex: 1; min-width: 0; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } "
                         + ".todo-row.done .todo-title { color: #aaa; text-decoration: line-through; } "
                         + ".due-date { color: #666; font-size: 14px; white-space: nowrap; } .due-date.overdue { color: #d32f2f; font-weight: bold; } .due-date.due-today { color: #ed6c02; font-weight: bold; } "
                         + ".delete-button, .edit-button { padding: 10px 14px; color: white; } "
@@ -178,7 +179,11 @@ public class App {
                         + ".task-count { margin: 26px 0 0; color: #666; text-align: center; font-size: 18px; } "
                         + ".empty-message { text-align: center; color: #666; } "
                         + "@media (max-width: 560px) { .app-card { padding: 28px 18px; } h1 { font-size: 32px; } "
-                        + ".todo-row { grid-template-columns: 28px minmax(0, 1fr) auto auto auto; gap: 10px; padding: 14px 10px; } "
+                        + ".todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; "
+                        + "grid-template-areas: 'check title title title' 'due due edit delete'; gap: 10px; padding: 14px 10px; } "
+                        + ".todo-check { grid-area: check; } .todo-title { grid-area: title; white-space: normal; "
+                        + "overflow: visible; overflow-wrap: anywhere; text-overflow: clip; } .due-date { grid-area: due; } "
+                        + ".edit-button { grid-area: edit; } .delete-button { grid-area: delete; } "
                         + ".delete-button { padding: 9px 10px; } }</style></head><body><main class='app-card'>"
                         + "<h1>TODOアプリ</h1>"
                         + "<form class='add-form' method='post' action='/add'><input name='todo' placeholder='新しいタスクを入力...' required>"
@@ -210,11 +215,10 @@ public class App {
                     html += "<ul class='todo-list'>";
                     for (Todo todo : visibleTodos) {
                         String rowClass = todo.isDone() ? "todo-row done" : "todo-row"; // 完了行の見た目を選ぶ
-                        String check = todo.isDone() ? "✓" : ""; // 完了時だけチェックを表示する
-                        String checkbox = "<span class='todo-check done'>" + check + "</span>"; // 完了済みのチェック欄を作る
-                        if (!todo.isDone()) {
-                            checkbox = "<a class='todo-check' href='/done?id=" + todo.getId() + "' aria-label='完了にする'></a>"; // 未完了のチェック欄を完了リンクにする
-                        }
+                        String checkbox = "<a class='todo-check" + (todo.isDone() ? " done" : "")
+                                + "' href='/done?id=" + todo.getId() + "' aria-label='"
+                                + (todo.isDone() ? "未完了に戻す" : "完了にする") + "'>"
+                                + (todo.isDone() ? "✓" : "") + "</a>";
                         String today = LocalDate.now().toString();
                         String dueClass = "";
                         if (!todo.getDueDate().isEmpty() && !todo.isDone()) {
@@ -340,8 +344,8 @@ public class App {
         } // ★ SQL処理を終える
     } // ★ addTodoメソッドの終わり
 
-    static void markDone(int id) throws IOException { // ★ Todoを完了状態にするメソッド
-        String sql = "UPDATE todos SET done = 1 WHERE id = ?"; // ★ 完了更新用SQLを用意する
+    static void toggleDone(int id) throws IOException { // Todoの完了状態を切り替えるメソッド
+        String sql = "UPDATE todos SET done = 1 - done WHERE id = ?";
         try (Connection connection = DriverManager.getConnection(DB_URL); // ★ SQLiteへ接続する
                 PreparedStatement statement = connection.prepareStatement(sql)) { // ★ 値を渡すSQL文を準備する
             statement.setInt(1, id); // ★ 1つ目の?にTodo番号を設定する
@@ -349,7 +353,7 @@ public class App {
         } catch (SQLException e) { // ★ SQLエラーを受け取る
             throw new IOException(e); // ★ HTTP処理へエラーを伝える
         } // ★ SQL処理を終える
-    } // ★ markDoneメソッドの終わり
+    } // toggleDoneメソッドの終わり
 
     static void deleteTodo(int id) throws IOException { // ★ TodoをDBから削除するメソッド
         String sql = "DELETE FROM todos WHERE id = ?"; // ★ 削除用SQLを用意する
