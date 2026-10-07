@@ -222,9 +222,9 @@ public class App {
                             else if (todo.getDueDate().equals(today)) dueClass = " due-today";
                         }
                         String duePrefix = dueClass.equals(" overdue") ? "（超過）" : "";
-                        String dueSuffix = dueClass.equals(" due-today") ? "（今日まで）" : "";
+                        String dueTodayPrefix = dueClass.equals(" due-today") ? "（今日まで）" : "";
                         String dueLabel = todo.getDueDate().isEmpty() ? "" : "<span class='due-date" + dueClass
-                                + "'>" + duePrefix + "期限: " + escapeHtml(todo.getDueDate()) + dueSuffix + "</span>";
+                                + "'>" + dueTodayPrefix + duePrefix + "期限: " + escapeHtml(todo.getDueDate()) + "</span>";
                         html += "<li class='" + rowClass + "'>" + checkbox + "<span class='todo-title'>"
                                 + escapeHtml(todo.getTitle()) + "</span>" + dueLabel + "<a class='edit-button' href='/edit?id="
                                 + todo.getId() + "'>編集</a><a class='delete-button' href='/delete?id="
